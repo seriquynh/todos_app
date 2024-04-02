@@ -1,29 +1,44 @@
-use actix_web::{get, post, App, HttpResponse, HttpServer, Responder};
+use actix_web::{get, web, App, HttpResponse, HttpServer, Responder, Result};
+use serde::Serialize;
 
-#[get("/healthz")]
-async fn healthz() -> impl Responder {
-    HttpResponse::Ok().body("OK")
+mod api;
+mod models;
+mod repository;
+
+#[derive(Serialize)]
+pub struct Response {
+    pub message: String,
 }
 
-#[get("/todos")]
-async fn todos_index() -> impl Responder {
-    HttpResponse::Ok().body("todos list")
+#[get("/health")]
+async fn healthcheck() -> impl Responder {
+    let response = Response {
+        message: "Everything is working fine.".to_string(),
+    };
+    HttpResponse::Ok().json(response)
 }
 
-#[post("/todos")]
-async fn todos_store() -> impl Responder {
-    // TODO: add new task to data.todos
-    HttpResponse::Ok().body("todos list")
+async fn not_found() -> Result<HttpResponse> {
+    let response = Response {
+        message: "Resource not found".to_string(),
+    };
+
+    Ok(HttpResponse::NotFound().json(response))
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| {
+    let todo_db = repository::database::Database::new();
+    let app_data = web::Data::new(todo_db);
+
+    HttpServer::new(move ||
         App::new()
-            .service(healthz)
-            .service(todos_index)
-            .service(todos_store)
-    })
+            .app_data(app_data.clone())
+            .configure(api::api::config)
+            .service(healthcheck)
+            .default_service(web::route().to(not_found))
+            .wrap(actix_web::middleware::Logger::default())
+    )
         .bind(("127.0.0.1", 8080))?
         .run()
         .await
